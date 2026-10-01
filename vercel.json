@@ -1,0 +1,14 @@
+{
+  "builds": [
+    {
+      "src": "numscope/web/app.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/(.*)",
+      "dest": "numscope/web/app.py"
+    }
+  ]
+}
