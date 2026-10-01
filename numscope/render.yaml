@@ -1,0 +1,24 @@
+# Render Blueprint. Dashboard > New > Blueprint > pick this repo.
+services:
+  - type: web
+    name: numscope
+    runtime: docker
+    plan: free
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+      - key: WEB_RATE_LIMIT
+        value: "10"
+      - key: WEB_RATE_WINDOW
+        value: "60"
+      - key: WEB_GLOBAL_LIMIT
+        value: "120"
+      - key: WEB_ENABLE_PROVIDERS
+        value: "false"
+      - key: WEB_DAILY_PROVIDER_CAP
+        value: "50"
+      # Only needed if WEB_ENABLE_PROVIDERS=true. Set in the dashboard.
+      - key: NUMVERIFY_API_KEY
+        sync: false

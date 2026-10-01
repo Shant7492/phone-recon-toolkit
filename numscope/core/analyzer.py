@@ -1,116 +1,105 @@
-"""Offline metadata extraction built on Google's libphonenumber port."""
-from __future__ import annotations
-
-import re
-from typing import Optional
-
 import phonenumbers
-from phonenumbers import (
-    NumberParseException,
-    PhoneNumberFormat,
-    PhoneNumberType,
-    ValidationResult,
-    carrier,
-    geocoder,
-    timezone,
-)
+from phonenumbers import geocoder, carrier, timezone
+from modules.dorks import generate_dorks
 
-from core.models import PhoneMetadata
-
-_TYPE_NAMES = {
-    value: name
-    for name, value in vars(PhoneNumberType).items()
-    if name.isupper() and isinstance(value, int)
+INDIA_CIRCLES = {
+    "9810": "Delhi", "9811": "Delhi", "9818": "Delhi", "9871": "Delhi", "9910": "Delhi",
+    "9820": "Mumbai", "9821": "Mumbai", "9819": "Mumbai", "9833": "Mumbai", "9920": "Mumbai",
+    "9830": "Kolkata", "9831": "Kolkata", "9832": "West Bengal",
+    "9840": "Chennai", "9841": "Chennai", "9842": "Tamil Nadu", "9843": "Tamil Nadu",
+    "9844": "Karnataka (Bangalore)", "9845": "Karnataka (Bangalore)", "9880": "Karnataka",
+    "9848": "Andhra Pradesh & Telangana", "9849": "Andhra Pradesh & Telangana",
+    "9824": "Gujarat", "9825": "Gujarat", "9898": "Gujarat",
+    "9826": "Madhya Pradesh & Chhattisgarh", "9827": "Madhya Pradesh & Chhattisgarh",
+    "9828": "Rajasthan", "9829": "Rajasthan", "9414": "Rajasthan",
+    "9838": "Uttar Pradesh (East)", "9839": "Uttar Pradesh (East)",
+    "9837": "Uttar Pradesh (West)", "9897": "Uttar Pradesh (West)",
+    "9835": "Bihar & Jharkhand", "9934": "Bihar & Jharkhand", "9431": "Bihar & Jharkhand",
+    "9895": "Kerala", "9846": "Kerala", "9847": "Kerala",
+    "9814": "Punjab", "9815": "Punjab", "9872": "Punjab",
+    "9812": "Haryana", "9896": "Haryana",
+    "9816": "Himachal Pradesh", "9418": "Himachal Pradesh",
+    "9419": "Jammu & Kashmir", "9858": "Jammu & Kashmir",
+    "9861": "Odisha", "9437": "Odisha",
+    "9864": "Assam", "9435": "Assam",
+    "9862": "North East", "9863": "North East"
 }
 
-_REASONS = {
-    ValidationResult.IS_POSSIBLE: "Length matches a valid pattern",
-    ValidationResult.IS_POSSIBLE_LOCAL_ONLY: (
-        "Only dialable locally (missing area/trunk code)"
-    ),
-    ValidationResult.INVALID_COUNTRY_CODE: "Invalid country calling code",
-    ValidationResult.TOO_SHORT: "Too short for this country",
-    ValidationResult.TOO_LONG: "Too long for this country",
-    ValidationResult.INVALID_LENGTH: (
-        "Length not valid for any number type in this country"
-    ),
-}
+def resolve_circle(national_number: str, default_region: str) -> str:
+    clean = national_number.replace(" ", "").replace("-", "").lstrip("0")
+    if len(clean) >= 4:
+        prefix = clean[:4]
+        if prefix in INDIA_CIRCLES:
+            return INDIA_CIRCLES[prefix]
+    return default_region or "India"
 
-_PARSE_HINTS = {
-    NumberParseException.INVALID_COUNTRY_CODE: (
-        "Missing or invalid country code. Use +<country code>... or pass "
-        "--region (e.g. --region IN)."
-    ),
-    NumberParseException.NOT_A_NUMBER: "Input does not look like a phone number.",
-    NumberParseException.TOO_SHORT_AFTER_IDD: (
-        "Too short after the international dialing prefix."
-    ),
-    NumberParseException.TOO_SHORT_NSN: "National number is too short.",
-    NumberParseException.TOO_LONG: "Number is too long to be valid.",
-}
+def calculate_risk(e164: str, national: str) -> dict:
+    digits = [c for c in national if c.isdigit()]
+    score = 0
+    reasons = []
+    
+    # Check repeated digits
+    if len(digits) >= 5:
+        consecutive = 1
+        for i in range(1, len(digits)):
+            if digits[i] == digits[i-1]:
+                consecutive += 1
+                if consecutive >= 4:
+                    score += 25
+                    reasons.append("Repeated sequential digits pattern")
+                    break
+            else:
+                consecutive = 1
 
+    level = "LOW"
+    if score >= 50:
+        level = "HIGH"
+    elif score >= 20:
+        level = "MEDIUM"
+
+    return {"score": score, "level": level, "reasons": reasons}
 
 class PhoneAnalyzer:
-    """Turn a raw string into a PhoneMetadata record without any network I/O."""
+    def analyze(self, raw_input: str, default_region: str = "IN") -> dict:
+        parsed = phonenumbers.parse(raw_input, default_region)
+        if not phonenumbers.is_valid_number(parsed):
+            return {"valid": False, "error": "Invalid phone number format"}
 
-    def __init__(self, default_region: Optional[str] = None,
-                 language: str = "en") -> None:
-        self.default_region = default_region
-        self.language = language
+        e164 = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+        national = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
+        international = phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.INTERNATIONAL)
+        clean_national = national.replace(" ", "").replace("-", "").lstrip("0")
+        digits_only = e164.lstrip("+")
 
-    def analyze(self, raw: str) -> PhoneMetadata:
-        cleaned = raw.strip()
-        meta = PhoneMetadata(
-            raw_input=raw, parsed=False, digits=re.sub(r"\D", "", cleaned)
-        )
+        raw_region = geocoder.description_for_number(parsed, "en")
+        refined_circle = resolve_circle(national, raw_region)
+        carrier_name = carrier.name_for_number(parsed, "en") or "Unknown"
 
-        try:
-            number = phonenumbers.parse(cleaned, self.default_region)
-        except NumberParseException as exc:
-            meta.parse_error = _PARSE_HINTS.get(exc.error_type, str(exc))
-            no_plus = not cleaned.startswith("+")
-            missing_region = (
-                exc.error_type == NumberParseException.INVALID_COUNTRY_CODE
-                and no_plus and not self.default_region
-            )
-            meta.parse_error_kind = (
-                "missing_region" if missing_region else "malformed"
-            )
-            return meta
+        risk_result = calculate_risk(e164, national)
+        dorks_list = generate_dorks(national, e164)
 
-        meta.parsed = True
-        meta.e164 = phonenumbers.format_number(number, PhoneNumberFormat.E164)
-        meta.international = phonenumbers.format_number(
-            number, PhoneNumberFormat.INTERNATIONAL
-        )
-        meta.national = phonenumbers.format_number(
-            number, PhoneNumberFormat.NATIONAL
-        )
-        meta.rfc3966 = phonenumbers.format_number(
-            number, PhoneNumberFormat.RFC3966
-        )
-        meta.country_code = number.country_code
-        # National *significant* number keeps leading zeros (e.g. Italy).
-        meta.national_number = phonenumbers.national_significant_number(number)
-        meta.region_code = phonenumbers.region_code_for_number(number)
-
-        reason = phonenumbers.is_possible_number_with_reason(number)
-        meta.is_possible = phonenumbers.is_possible_number(number)
-        meta.possible_reason = _REASONS.get(reason, f"Unknown ({reason})")
-        meta.is_valid = phonenumbers.is_valid_number(number)
-
-        meta.number_type = _TYPE_NAMES.get(
-            phonenumbers.number_type(number), "UNKNOWN"
-        )
-        meta.carrier = carrier.name_for_number(number, self.language) or None
-        meta.location = (
-            geocoder.description_for_number(number, self.language) or None
-        )
-        meta.country = (
-            geocoder.country_name_for_number(number, self.language) or None
-        )
-        meta.timezones = [
-            tz for tz in timezone.time_zones_for_number(number)
-            if tz != "Etc/Unknown"
+        direct_actions = [
+            {"name": "WhatsApp Chat/Info", "url": f"https://wa.me/{digits_only}"},
+            {"name": "Telegram Profile", "url": f"https://t.me/+{digits_only}"},
+            {"name": "Truecaller Lookup", "url": f"https://www.truecaller.com/search/in/{clean_national}"}
         ]
-        return meta
+
+        return {
+            "valid": True,
+            "metadata": {
+                "e164": e164,
+                "national": national,
+                "international": international,
+                "country_code": parsed.country_code,
+                "carrier": carrier_name,
+                "circle": refined_circle,
+                "timezones": list(timezone.time_zones_for_number(parsed))
+            },
+            "direct_actions": direct_actions,
+            "risk": risk_result,
+            "dorks": dorks_list
+        }
+
+def analyze_phone(raw_input: str, default_region: str = "IN") -> dict:
+    analyzer = PhoneAnalyzer()
+    return analyzer.analyze(raw_input, default_region)

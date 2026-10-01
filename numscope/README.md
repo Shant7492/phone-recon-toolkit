@@ -102,6 +102,59 @@ HTTP_TIMEOUT=10
 `lookup` must return a `ProviderResult` for expected failures. The CLI also
 catches unexpected exceptions so a plugin can never crash a scan.
 
+## Web app & deployment
+
+The same engine is available as a small FastAPI web app (`web/`): enter a
+number, get metadata, risk heuristics and search links. Vanilla JS front end,
+strict CSP, no cookies, no database.
+
+### Run locally
+
+```bash
+pip install -r requirements-web.txt
+uvicorn web.app:app --reload --port 8000     # http://localhost:8000
+```
+
+### Deploy with Docker
+
+```bash
+docker build -t numscope .
+docker run --rm -p 8000:8000 -e TRUST_PROXY_HOPS=0 numscope
+```
+
+### Deploy on Render (free tier, no card at time of writing)
+
+1. Push the repo to GitHub.
+2. Render dashboard: **New > Blueprint**, select the repo. `render.yaml` does the rest.
+3. Open the generated `https://<name>.onrender.com` URL.
+
+Free instances sleep after inactivity, so the first request can be slow.
+Check Render's current free-tier terms before relying on them. Any Docker host
+works too (Fly.io, Railway, Hugging Face Spaces Docker SDK: set `PORT=7860`
+there). `TRUST_PROXY_HOPS` must match the number of proxies in front of you,
+or per-IP rate limiting will be wrong or spoofable.
+
+### Web configuration
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `WEB_RATE_LIMIT` / `WEB_RATE_WINDOW` | 10 / 60 | Requests per IP per window (seconds) |
+| `WEB_GLOBAL_LIMIT` | 120 | Requests per window across all users |
+| `WEB_ENABLE_PROVIDERS` | false | Let the public site call Numverify |
+| `WEB_DAILY_PROVIDER_CAP` | 50 | Max provider calls per UTC day |
+| `TRUST_PROXY_HOPS` | 0 | Reverse-proxy hops (1 on most PaaS) |
+
+### Operator responsibilities
+
+- Rate limits are in-memory and per process. Run one worker, or add Redis.
+- The app keeps no number logs and uvicorn runs with `--no-access-log`.
+  If your host or CDN logs request bodies, that is outside this app's control.
+- Running a public lookup service makes you the operator of a data-processing
+  tool. Review the privacy law of your jurisdiction and add your own
+  contact/abuse address to the footer in `web/static/index.html`.
+- Keep `WEB_ENABLE_PROVIDERS=false` unless you have read Numverify's terms:
+  every visitor's number would be forwarded to them using your key.
+
 ## Risk scoring
 
 Score = sum of factor points, capped at 100. Levels: `LOW` <20,
@@ -151,6 +204,7 @@ expose phone numbers to crawlers.
 numscope/
 ├── cli.py                      # argparse entry point
 ├── core/
+│   ├── pipeline.py             # shared scan pipeline (CLI + web)
 │   ├── analyzer.py             # offline phonenumbers engine
 │   ├── config.py               # .env / environment loading
 │   ├── models.py               # dataclasses
@@ -161,9 +215,14 @@ numscope/
 │   └── providers/
 │       ├── base.py             # provider interface
 │       └── numverify.py        # optional free-tier API
-├── tests/test_numscope.py      # offline unit tests (no network)
+├── web/                        # FastAPI app, rate limiter, static front end
+│   ├── app.py  ratelimit.py  settings.py
+│   └── static/  index.html  app.js  style.css
+├── tests/                      # offline tests (core + web)
+├── Dockerfile  .dockerignore  render.yaml
 ├── .env.example
 ├── requirements.txt
+├── requirements-web.txt
 └── requirements-dev.txt
 ```
 

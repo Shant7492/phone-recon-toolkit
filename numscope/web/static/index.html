@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>NumScope - OSINT Recon</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/static/style.css">
+  <style>
+    @media print {
+      .no-print, input, button, form { display: none !important; }
+      body { background: white; color: black; }
+      .card { border: 1px solid #ccc; box-shadow: none; margin-bottom: 20px; }
+      details { display: block; }
+    }
+    .action-btn-group { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 15px; }
+    .action-btn { background: #2563eb; color: #fff; padding: 6px 12px; border-radius: 4px; text-decoration: none; font-size: 13px; font-weight: 500; }
+    .action-btn:hover { background: #1d4ed8; }
+    .copy-btn { margin-left: 8px; font-size: 11px; padding: 2px 6px; cursor: pointer; border: 1px solid #cbd5e1; background: #f8fafc; border-radius: 3px; color: #334155; }
+    .top-actions { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+    details { margin-bottom: 12px; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; padding: 10px; }
+    summary { font-weight: 600; cursor: pointer; color: #1e293b; outline: none; }
+    .query-box { background: #f8fafc; padding: 10px; border-radius: 4px; margin-top: 10px; border: 1px solid #e2e8f0; }
+    .query-text { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-family: monospace; font-size: 13px; color: #475569; }
+    .query-links a { color: #2563eb; text-decoration: none; font-size: 13px; margin-right: 12px; }
+    .query-links a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header class="no-print">
+      <h2>numscope</h2>
+      <p>Public-data phone intelligence & footprint recon.</p>
+    </header>
+
+    <div class="top-actions no-print" id="export-section" style="display:none;">
+      <button class="action-btn" onclick="window.print()" style="background:#059669;">🖨️ Download Report</button>
+    </div>
+
+    <form id="search-form" class="no-print">
+      <div class="input-group">
+        <input type="text" id="phone-input" placeholder="+919876543210" required />
+        <button type="submit">Analyze</button>
+      </div>
+      <label class="consent-box">
+        <input type="checkbox" id="consent" checked required />
+        I will use this for lawful, authorized purposes only.
+      </label>
+    </form>
+
+    <div id="results" style="display: none; margin-top: 20px;">
+      
+      <!-- Direct Actions (Merged seamlessly) -->
+      <div class="action-btn-group no-print" id="quick-actions"></div>
+
+      <!-- Metadata Table (Restored to original look) -->
+      <div class="card">
+        <h3>Metadata</h3>
+        <table class="data-table">
+          <tr><td>E.164</td><td id="meta-e164"></td></tr>
+          <tr><td>International</td><td id="meta-international"></td></tr>
+          <tr><td>National</td><td id="meta-national"></td></tr>
+          <tr><td>Country / region</td><td id="meta-country"></td></tr>
+          <tr><td>Carrier (original)</td><td id="meta-carrier"></td></tr>
+          <tr><td>Telecom Circle</td><td id="meta-circle" style="font-weight:600; color:#0f172a;"></td></tr>
+          <tr><td>Time zones</td><td id="meta-tz"></td></tr>
+        </table>
+      </div>
+
+      <!-- Risk Score (Restored to original large UI) -->
+      <div class="card" id="risk-card">
+        <h3>Risk heuristics</h3>
+        <div id="risk-score-display" style="font-size: 24px; font-weight: bold; margin: 10px 0;"></div>
+        <ul id="risk-notes" style="font-size: 13px; color: #475569; padding-left: 20px;"></ul>
+      </div>
+
+      <!-- Search Queries (Restored to Collapsible Details/Summary) -->
+      <div class="card">
+        <h3>Search queries <span style="font-size: 12px; font-weight: normal; color: #64748b;">(open in your own browser)</span></h3>
+        <div id="dorks-container"></div>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
