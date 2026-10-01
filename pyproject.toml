@@ -1,0 +1,2 @@
+[tool.vercel]
+entrypoint = "numscope/web/app.py:app"
