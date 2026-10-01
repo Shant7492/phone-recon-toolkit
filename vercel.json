@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/(.*)",
-      "destination": "numscope/web/app.py"
+      "destination": "/api/index.py"
     }
   ]
 }
